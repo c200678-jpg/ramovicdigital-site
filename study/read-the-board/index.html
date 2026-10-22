@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Read the board</title>
+<style>
+  :root { --bg: #14131a; --panel: #23232f; --fg: #ece9e0; --muted: #a09fb3; --ember: #ff9a3c; --ember2: #ffd27a; --cold: #8fd0ff; --ok: #8de39a; --bad: #ff7a7a; --line: #3a3a4c; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); font: 16px/1.45 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  .wrap { max-width: 520px; margin: 0 auto; padding: 12px 16px 48px; }
+  h1 { font-size: 1.35rem; margin: 8px 0 4px; }
+  h2 { font-size: 1.1rem; margin: 14px 0 8px; }
+  p { margin: 8px 0; }
+  .muted { color: var(--muted); font-size: 0.9rem; }
+  .screen { display: none; } .screen.on { display: block; }
+  .stim { position: relative; width: 100%; max-width: 420px; margin: 8px auto; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
+  .stim img { width: 100%; display: block; border-radius: 10px; }
+  .grid { position: absolute; display: grid; }
+  .cell { border: 1px solid rgba(255,255,255,0.10); box-sizing: border-box; position: relative; }
+  .grid.pick .cell { cursor: pointer; }
+  .cell.sel { background: rgba(141,227,154,0.32); outline: 3px solid var(--ok); outline-offset: -3px; }
+  .cell .mark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 22px; color: #fff; text-shadow: 0 0 6px #000, 0 0 2px #000; pointer-events: none; }
+  .labels { position: absolute; color: var(--ember2); font-weight: 700; font-size: 13px; text-shadow: 0 0 4px #000; pointer-events: none; }
+  .btn { font: 600 1rem inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 16px; cursor: pointer; text-decoration: none; display: inline-block; }
+  .btn.primary { background: var(--ember); color: #2a1507; border-color: var(--ember); }
+  .btn:disabled { opacity: 0.45; cursor: default; }
+  .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 8px 0; }
+  .opt { display: block; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 6px 0; cursor: pointer; }
+  .opt input { margin-right: 10px; transform: scale(1.2); }
+  .opt.on { border-color: var(--ok); background: #253226; }
+  .icons { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+  .icon { width: 72px; background: var(--panel); border: 2px solid var(--line); border-radius: 10px; padding: 6px; text-align: center; cursor: pointer; font-size: 12px; color: var(--muted); }
+  .icon img { width: 56px; height: 56px; display: block; margin: 0 auto 4px; border-radius: 6px; }
+  .icon.on { border-color: var(--ok); background: #253226; color: var(--fg); }
+  textarea { width: 100%; box-sizing: border-box; min-height: 72px; font: inherit; background: var(--panel); color: var(--fg); border: 1px solid var(--line); border-radius: 10px; padding: 10px; }
+  .conf { display: flex; gap: 6px; margin: 6px 0 2px; }
+  .conf button { flex: 1; font: 600 0.95rem inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 0; cursor: pointer; }
+  .conf button.on { background: var(--cold); color: #0d1a24; border-color: var(--cold); }
+  .err { color: var(--bad); font-size: 0.9rem; min-height: 1.2em; }
+  .progress { height: 4px; background: var(--line); border-radius: 2px; margin: 6px 0 12px; overflow: hidden; } .progress i { display: block; height: 100%; background: var(--ember); width: 0; transition: width 0.3s; }
+  .code { font-size: 1.6rem; font-weight: 800; letter-spacing: 0.08em; color: var(--ember2); margin: 10px 0; }
+  .warn { background: #3a2a2a; border: 1px solid var(--bad); border-radius: 10px; padding: 10px 12px; }
+  pre { white-space: pre-wrap; word-break: break-all; font-size: 11px; color: var(--muted); max-height: 160px; overflow: auto; background: var(--panel); padding: 8px; border-radius: 8px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="progress"><i id="bar"></i></div>
+  <div id="app"></div>
+</div>
+<script>
+/* CONFIG, set before launch. sink: the Apps Script web-app URL (sink.gs) that stores a submission and answers
+   "?assign=1" with the arm that has fewer completions. code: the Prolific completion code. Each image carries the
+   board's geometry on it (the top-left of cell A1 and the cell pitch, in image pixels) so the same lettered grid sits
+   on both arms. The six images are 1080x2160 captures of the game (local main, Play mode) with the same geometry. */
+var CONFIG = {
+  sink: "https://script.google.com/macros/s/AKfycbzZxCgtXnQVaK5DRMs-m93hcC5gjLJEUt0VIfeu4WDP8RE5W8k2j2HPjJSEvVvKNAvixA/exec",
+  code: "SET-BEFORE-LAUNCH",
+  completionUrl: "https://app.prolific.com/submissions/complete?cc=",
+  arms: {
+    before: {
+      A:      { src: "before_A.png",      w: 1080, h: 2160, x0: 110, y0: 287, pitch: 123 },
+      A_held: { src: "before_A_held.png", w: 1080, h: 2160, x0: 110, y0: 287, pitch: 123 },
+      B:      { src: "before_B.png",      w: 1080, h: 2160, x0: 110, y0: 287, pitch: 123 }
+    },
+    after: {
+      A:      { src: "after_A.png",       w: 1080, h: 2160, x0: 110, y0: 287, pitch: 123 },
+      A_held: { src: "after_A_held.png",  w: 1080, h: 2160, x0: 110, y0: 287, pitch: 123 },
+      B:      { src: "after_B.png",       w: 1080, h: 2160, x0: 110, y0: 287, pitch: 123 }
+    }
+  },
+  icons: { pinecone: "icon_pinecone.png", bauble: "icon_bauble.png", goldsprig: "icon_goldsprig.png", greensprig: "icon_greensprig.png", frost: "icon_frost.png" }
+};
+
+// testing only: the test runner may set window.__STUDY_TEST__ before the page loads (it cannot come from the URL)
+if (window.__STUDY_TEST__) { for (var __k in window.__STUDY_TEST__) CONFIG[__k] = window.__STUDY_TEST__[__k]; }
+(function () {
+  var $ = function (s) { return document.querySelector(s); };
+  var app = $('#app');
+  var q = (function () { var o = {}; location.search.replace(/^\?/, '').split('&').forEach(function (kv) { if (!kv) return; var p = kv.split('='); o[decodeURIComponent(p[0])] = decodeURIComponent((p[1] || '').replace(/\+/g, ' ')); }); return o; })();
+  var pid = (q.PROLIFIC_PID || q.pid || '').slice(0, 64);
+  function hashArm(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h % 2 ? 'after' : 'before'; }
+  function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
+  function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
+  var sid = pid + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  var R = { id: sid, pid: pid, study: q.STUDY_ID || '', session: q.SESSION_ID || '', arm: null, armBy: null, device: null, screen: screen.width + 'x' + screen.height, viewport: window.innerWidth + 'x' + window.innerHeight, dpr: window.devicePixelRatio || 1, started: new Date().toISOString(), answers: {}, order: [] };
+  R.device = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? (/iPad|Tablet/i.test(navigator.userAgent) || (screen.width >= 700 && /Android/i.test(navigator.userAgent)) ? 'tablet' : 'phone') : 'computer';
+  var IMG = null;
+  var LET = 'ABCDEFG';
+  function code(x, y) { return LET[x] + (9 - y); }   // x 0..6 left to right, y 0 = the bottom row (the game's coordinates)
+
+  // ---------- arm assignment: an override for testing, else the sink's balance, else the Prolific ID's parity; a reload keeps the arm ----------
+  function assignArm(done) {
+    if (q.arm === 'before' || q.arm === 'after') { R.arm = q.arm; R.armBy = 'override'; return done(); }
+    var kept = pid ? read('wmr_arm_' + pid) : null;
+    if (kept === 'before' || kept === 'after') { R.arm = kept; R.armBy = 'kept'; return done(); }
+    var fallback = function () { R.arm = pid ? hashArm(pid) : (Math.random() < 0.5 ? 'before' : 'after'); R.armBy = pid ? 'parity' : 'random'; if (pid) store('wmr_arm_' + pid, R.arm); done(); };
+    if (!CONFIG.sink) return fallback();
+    var settled = false, timer = setTimeout(function () { if (!settled) { settled = true; fallback(); } }, 4000);
+    fetch(CONFIG.sink + '?assign=1&pid=' + encodeURIComponent(pid), { method: 'GET' }).then(function (r) { return r.text(); }).then(function (t) {
+      if (settled) return; settled = true; clearTimeout(timer);
+      var m = /"arm"\s*:\s*"(before|after)"/.exec(t);
+      if (m) { R.arm = m[1]; R.armBy = 'server'; if (pid) store('wmr_arm_' + pid, R.arm); done(); } else fallback();
+    }).catch(function () { if (settled) return; settled = true; clearTimeout(timer); fallback(); });
+  }
+
+  // ---------- the stimulus with its grid overlay ----------
+  function stimulus(img, opts) {
+    opts = opts || {};
+    var box = document.createElement('div'); box.className = 'stim';
+    var im = document.createElement('img'); im.src = img.src; im.alt = 'A screenshot of the game'; im.draggable = false; box.appendChild(im);
+    var grid = document.createElement('div'); grid.className = 'grid' + (opts.pick ? ' pick' : '');
+    var cells = {};
+    for (var row = 0; row < 9; row++) for (var col = 0; col < 7; col++) {
+      var y = 8 - row, x = col, c = document.createElement('div'); c.className = 'cell'; c.dataset.code = code(x, y);
+      if (opts.marks && opts.marks[code(x, y)]) { var m = document.createElement('div'); m.className = 'mark'; m.textContent = opts.marks[code(x, y)]; c.appendChild(m); }
+      grid.appendChild(c); cells[code(x, y)] = c;
+    }
+    box.appendChild(grid);
+    var labels = [];
+    for (var i = 0; i < 7; i++) { var l = document.createElement('div'); l.className = 'labels'; l.textContent = LET[i]; box.appendChild(l); labels.push({ el: l, col: i }); }
+    for (var j = 0; j < 9; j++) { var l2 = document.createElement('div'); l2.className = 'labels'; l2.textContent = String(j + 1); box.appendChild(l2); labels.push({ el: l2, row: j }); }
+    function place() {
+      var sc = box.clientWidth / img.w;
+      grid.style.left = (img.x0 * sc) + 'px'; grid.style.top = (img.y0 * sc) + 'px';
+      grid.style.width = (img.pitch * 7 * sc) + 'px'; grid.style.height = (img.pitch * 9 * sc) + 'px';
+      grid.style.gridTemplateColumns = 'repeat(7, 1fr)'; grid.style.gridTemplateRows = 'repeat(9, 1fr)';
+      labels.forEach(function (L) {
+        if (L.col !== undefined) { L.el.style.left = ((img.x0 + L.col * img.pitch + img.pitch / 2) * sc - 5) + 'px'; L.el.style.top = (img.y0 * sc - 18) + 'px'; }
+        else { L.el.style.left = (img.x0 * sc - 16) + 'px'; L.el.style.top = ((img.y0 + L.row * img.pitch + img.pitch / 2) * sc - 9) + 'px'; }
+      });
+    }
+    im.addEventListener('load', place); window.addEventListener('resize', place); setTimeout(place, 0);
+    var sel = {};
+    if (opts.pick) grid.addEventListener('click', function (ev) {
+      var c = ev.target.closest('.cell'); if (!c) return; var k = c.dataset.code;
+      if (opts.pick === 'one') { Object.keys(sel).forEach(function (kk) { cells[kk].classList.remove('sel'); }); sel = {}; sel[k] = 1; c.classList.add('sel'); }
+      else { if (sel[k]) { delete sel[k]; c.classList.remove('sel'); } else { sel[k] = 1; c.classList.add('sel'); } }
+    });
+    return { el: box, selected: function () { return Object.keys(sel); } };
+  }
+
+  // ---------- generic screen plumbing ----------
+  var screens = [], at = -1, tShown = 0;
+  function show(i) {
+    at = i; app.innerHTML = ''; var s = screens[i]; var el = s.render(); app.appendChild(el); window.scrollTo(0, 0); tShown = performance.now();
+    $('#bar').style.width = Math.round(100 * i / (screens.length - 1)) + '%';
+  }
+  function next() { if (at < screens.length - 1) show(at + 1); }
+  function confidence() {
+    var wrap = document.createElement('div'); var v = 0;
+    var lab = document.createElement('p'); lab.className = 'muted'; lab.textContent = 'How sure are you? 1 = guessing, 5 = certain'; wrap.appendChild(lab);
+    var row = document.createElement('div'); row.className = 'conf';
+    for (var i = 1; i <= 5; i++) (function (i) { var b = document.createElement('button'); b.type = 'button'; b.textContent = String(i); b.addEventListener('click', function () { v = i; row.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); }); }); row.appendChild(b); })(i);
+    wrap.appendChild(row); return { el: wrap, value: function () { return v; } };
+  }
+  function question(id, build) {
+    screens.push({ id: id, render: function () {
+      var el = document.createElement('div'); el.className = 'screen on';
+      var api = build(el);
+      var conf = api.noConfidence ? null : confidence(); if (conf) el.appendChild(conf.el);
+      var err = document.createElement('div'); err.className = 'err'; el.appendChild(err);
+      var b = document.createElement('button'); b.className = 'btn primary'; b.textContent = 'Next'; el.appendChild(b);
+      b.addEventListener('click', function () {
+        var e = api.valid(); if (!e && conf && !conf.value()) e = 'Please say how sure you are.';
+        if (e) { err.textContent = e; return; }
+        var a = api.answer(); a.ms = Math.round(performance.now() - tShown); if (conf) a.conf = conf.value();
+        R.answers[id] = a; R.order.push(id); next();
+      });
+      return el;
+    } });
+  }
+  function h(tag, text, cls) { var e = document.createElement(tag); if (text) e.textContent = text; if (cls) e.className = cls; return e; }
+  function textarea(ph) { var t = document.createElement('textarea'); t.placeholder = ph || ''; t.maxLength = 600; return t; }
+  function radios(name, options) {
+    var wrap = document.createElement('div'), val = '';
+    options.forEach(function (o) { var l = document.createElement('label'); l.className = 'opt'; var r = document.createElement('input'); r.type = 'radio'; r.name = name; r.value = o[0]; l.appendChild(r); l.appendChild(document.createTextNode(o[1]));
+      r.addEventListener('change', function () { val = o[0]; wrap.querySelectorAll('.opt').forEach(function (x) { x.classList.toggle('on', x === l); }); }); wrap.appendChild(l); });
+    return { el: wrap, value: function () { return val; } };
+  }
+
+  // ---------- the screens ----------
+  screens.push({ id: 'intro', render: function () {
+    var el = h('div', '', 'screen on');
+    el.appendChild(h('h1', 'Read the board'));
+    el.appendChild(h('p', 'You will see a few screenshots of a small mobile puzzle game you have never played, and answer nine short questions about what you see. There are no right answers for you to find: we are testing the pictures, not you. Please answer from what the screen shows, without guessing what we hope to hear.'));
+    el.appendChild(h('p', 'It takes about six minutes.'));
+    el.appendChild(h('p', 'What we record: your Prolific ID (only to approve your submission), the kind of device and screen size you use, your answers, how sure you are, and how long each question takes. No name, email or location. The data is kept by the researcher (Ramovic Digital, the game’s developer) and used only to improve this game.', 'muted'));
+    var b = h('button', 'Start', 'btn primary'); b.addEventListener('click', next); el.appendChild(b); return el; } });
+
+  question('q1_choice', function (el) {
+    el.appendChild(h('h2', '1 of 9. Your first tap'));
+    el.appendChild(h('p', 'In this game you tap tiles. You have five taps on this level. Tap the tile you would tap FIRST, then say why.'));
+    var st = stimulus(IMG.A, { pick: 'one' }); el.appendChild(st.el);
+    var why = textarea('Why that one?'); el.appendChild(why);
+    return { valid: function () { if (!st.selected().length) return 'Tap a tile on the picture.'; if (why.value.trim().split(/\s+/).length < 3) return 'A few words on why, please.'; return ''; }, answer: function () { return { cell: st.selected()[0], why: why.value.trim() }; } };
+  });
+  question('q2_fuel', function (el) {
+    el.appendChild(h('h2', '2 of 9. What burns?'));
+    el.appendChild(h('p', 'Here are the kinds of tile on that board. Which of them can catch fire? Tap all that apply.'));
+    var st = stimulus(IMG.A, {}); el.appendChild(st.el);
+    var row = h('div', '', 'icons'); var sel = {};
+    [['pinecone', 'pinecone'], ['bauble', 'blue ball'], ['goldsprig', 'yellow plant'], ['greensprig', 'green plant'], ['frost', 'ice block']].forEach(function (p) {
+      var b = h('div', '', 'icon'); var im = document.createElement('img'); im.src = CONFIG.icons[p[0]]; im.alt = p[1]; b.appendChild(im); b.appendChild(document.createTextNode(p[1]));
+      b.addEventListener('click', function () { sel[p[0]] = !sel[p[0]]; b.classList.toggle('on', !!sel[p[0]]); }); row.appendChild(b); });
+    el.appendChild(row);
+    return { valid: function () { return Object.keys(sel).some(function (k) { return sel[k]; }) ? '' : 'Tap at least one.'; }, answer: function () { return { items: Object.keys(sel).filter(function (k) { return sel[k]; }) }; } };
+  });
+  question('q3_goal', function (el) {
+    el.appendChild(h('h2', '3 of 9. The goal'));
+    el.appendChild(h('p', 'What are you trying to achieve on this screen? One sentence.'));
+    var st = stimulus(IMG.A, {}); el.appendChild(st.el);
+    var t = textarea('I think the goal is…'); el.appendChild(t);
+    return { valid: function () { return t.value.trim().split(/\s+/).length < 3 ? 'A few words, please.' : ''; }, answer: function () { return { text: t.value.trim() }; } };
+  });
+  question('q4_group', function (el) {
+    el.appendChild(h('h2', '4 of 9. What catches first'));
+    el.appendChild(h('p', 'Suppose you tap the tile marked ★ (B5). Which tiles catch fire first? Tap all of them on the picture (you can include B5 itself).'));
+    var st = stimulus(IMG.A, { pick: 'many', marks: { B5: '★' } }); el.appendChild(st.el);
+    return { valid: function () { return st.selected().length ? '' : 'Tap the tiles you think catch.'; }, answer: function () { return { cells: st.selected() }; } };
+  });
+  question('q5_wind_A', function (el) {
+    el.appendChild(h('h2', '5 of 9. The wind'));
+    el.appendChild(h('p', 'Which way is the wind blowing on this board?'));
+    var st = stimulus(IMG.A, {}); el.appendChild(st.el);
+    var r = radios('w5', [['up', 'Up'], ['right', 'Right'], ['down', 'Down'], ['left', 'Left'], ['none', "I can't tell"]]); el.appendChild(r.el);
+    return { valid: function () { return r.value() ? '' : 'Choose one.'; }, answer: function () { return { dir: r.value() }; } };
+  });
+  question('att', function (el) {
+    el.appendChild(h('h2', 'A quick check'));
+    el.appendChild(h('p', 'To show you are reading the questions, choose "Left" here.'));
+    var r = radios('att', [['up', 'Up'], ['right', 'Right'], ['down', 'Down'], ['left', 'Left']]); el.appendChild(r.el);
+    return { noConfidence: true, valid: function () { return r.value() ? '' : 'Choose one.'; }, answer: function () { return { dir: r.value(), pass: r.value() === 'left' }; } };
+  });
+  question('q6_wind_B', function (el) {
+    el.appendChild(h('h2', '6 of 9. The wind, another level'));
+    el.appendChild(h('p', 'A different level. Which way is the wind blowing here?'));
+    var st = stimulus(IMG.B, {}); el.appendChild(st.el);
+    var r = radios('w6', [['up', 'Up'], ['right', 'Right'], ['down', 'Down'], ['left', 'Left'], ['none', "I can't tell"]]); el.appendChild(r.el);
+    return { valid: function () { return r.value() ? '' : 'Choose one.'; }, answer: function () { return { dir: r.value() }; } };
+  });
+  question('q7_wind_does', function (el) {
+    el.appendChild(h('h2', '7 of 9. What the wind does'));
+    el.appendChild(h('p', 'From what you can see, what does the wind do in this game? And what are the thin white streaks on the board?'));
+    var st = stimulus(IMG.B, {}); el.appendChild(st.el);
+    var t1 = textarea('The wind…'); el.appendChild(t1); var t2 = textarea('The white streaks are…'); el.appendChild(t2);
+    return { valid: function () { return (t1.value.trim().length < 3 || t2.value.trim().length < 3) ? 'Both boxes, please (a few words each).' : ''; }, answer: function () { return { wind: t1.value.trim(), streaks: t2.value.trim() }; } };
+  });
+  question('q8_held', function (el) {
+    el.appendChild(h('h2', '8 of 9. A finger on the board'));
+    el.appendChild(h('p', 'Back on the first level, a player is pressing and holding the tile marked ✋ (B6). Which tiles will burn when they let go? Tap all of them.'));
+    var st = stimulus(IMG.A_held, { pick: 'many', marks: { B6: '✋' } }); el.appendChild(st.el);
+    return { valid: function () { return st.selected().length ? '' : 'Tap the tiles you think will burn.'; }, answer: function () { return { cells: st.selected() }; } };
+  });
+  question('q9_comment', function (el) {
+    el.appendChild(h('h2', '9 of 9. Anything else'));
+    el.appendChild(h('p', 'Was anything on these screens confusing, or did anything jump out? Optional.'));
+    var t = textarea('Optional'); el.appendChild(t);
+    return { noConfidence: true, valid: function () { return ''; }, answer: function () { return { text: t.value.trim() }; } };
+  });
+
+  // ---------- the end: submit with verification, retries and a recovery path ----------
+  function submit(payload, onOk, onFail) {
+    var tries = 0, delays = [1500, 3000, 6000];
+    function attempt() {
+      tries++;
+      var body = JSON.stringify(payload);
+      fetch(CONFIG.sink, { method: 'POST', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: body })
+        .then(function (res) { return res.text().then(function (t) { return { ok: res.ok, text: t }; }); })
+        .then(function (r) { if (r.ok && r.text.indexOf('ok:' + payload.id) === 0) onOk(); else throw new Error('bad reply: ' + r.text.slice(0, 80)); })
+        .catch(function (e) { if (tries < 3) setTimeout(attempt, delays[tries - 1]); else onFail(e); });
+    }
+    attempt();
+  }
+  screens.push({ id: 'end', render: function () {
+    var el = h('div', '', 'screen on'); el.appendChild(h('h1', 'Thank you'));
+    R.finished = new Date().toISOString(); R.totalMs = Math.round(performance.now());
+    var status = h('p', 'Saving your answers…', 'muted'); el.appendChild(status);
+    var body = h('div'); el.appendChild(body);
+    var showCode = function () { body.appendChild(h('p', 'Your completion code:')); body.appendChild(h('div', CONFIG.code, 'code')); var a = document.createElement('a'); a.className = 'btn primary'; a.href = CONFIG.completionUrl + encodeURIComponent(CONFIG.code); a.textContent = 'Return to Prolific'; body.appendChild(a); };
+    var saved = function () { status.textContent = 'Saved.'; store('wmr_pending', null); showCode(); };
+    var failed = function () {
+      status.textContent = '';
+      store('wmr_pending', JSON.stringify(R));
+      var w = h('div', '', 'warn');
+      w.appendChild(h('p', 'Your answers could not be saved to our server. Please do one of these so your work is not lost:'));
+      var ul = document.createElement('ul'); ['Tap Retry (it tries again).', 'Or tap Download, keep the file, and send it as an attachment in a Prolific message to the researcher.', 'Or tap Copy and paste the text into a Prolific message to the researcher.'].forEach(function (s) { var li = h('li', s); ul.appendChild(li); }); w.appendChild(ul);
+      var row = h('div', '', 'row');
+      var retry = h('button', 'Retry', 'btn primary'); retry.addEventListener('click', function () { status.textContent = 'Saving…'; retry.disabled = true; submit(R, function () { w.remove(); saved(); }, function () { retry.disabled = false; status.textContent = 'Still not saved.'; }); }); row.appendChild(retry);
+      var dl = document.createElement('a'); dl.className = 'btn'; dl.textContent = 'Download'; dl.download = 'read-the-board-' + (R.pid || 'answers') + '.json'; dl.href = 'data:application/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(R)); row.appendChild(dl);
+      var cp = h('button', 'Copy', 'btn'); cp.addEventListener('click', function () { var txt = JSON.stringify(R); if (navigator.clipboard) navigator.clipboard.writeText(txt).then(function () { cp.textContent = 'Copied'; }); else { var pre = document.createElement('pre'); pre.textContent = txt; w.appendChild(pre); } }); row.appendChild(cp);
+      w.appendChild(row); body.appendChild(w);
+      body.appendChild(h('p', 'You will still be paid for your time: here is your completion code.', 'muted')); showCode();
+    };
+    if (!CONFIG.sink) { setTimeout(function () { status.textContent = 'No server is set on this copy of the page (a preview): nothing was sent. This is what it would send:'; var pre = document.createElement('pre'); pre.textContent = JSON.stringify(R, null, 1); body.appendChild(pre); showCode(); }, 200); }
+    else submit(R, saved, failed);
+    return el; } });
+
+  // a submission that failed last time is retried quietly when the page is opened again
+  (function resendPending() { var p = read('wmr_pending'); if (!p || !CONFIG.sink) return; try { var payload = JSON.parse(p); submit(payload, function () { store('wmr_pending', null); }, function () {}); } catch (e) {} })();
+
+  window.STUDY = { R: R, screens: screens, show: show, next: next, CONFIG: CONFIG };
+  assignArm(function () { IMG = CONFIG.arms[R.arm]; show(0); });
+})();
+</script>
+</body>
+</html>
