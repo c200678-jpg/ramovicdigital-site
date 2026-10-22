@@ -15,7 +15,7 @@
   .muted { color: var(--muted); font-size: 0.9rem; }
   .screen { display: none; } .screen.on { display: block; }
   .stim { position: relative; width: 100%; max-width: 420px; margin: 8px auto; user-select: none; -webkit-user-select: none; touch-action: manipulation; }
-  .stim img { width: 100%; display: block; border-radius: 10px; }
+  .stim img { width: 100%; height: auto; display: block; border-radius: 10px; background: #1c1b24; }
   .grid { position: absolute; display: grid; }
   .cell { border: 1px solid rgba(255,255,255,0.10); box-sizing: border-box; position: relative; }
   .grid.pick .cell { cursor: pointer; }
@@ -47,7 +47,7 @@
 <body>
 <div class="wrap">
   <div class="progress"><i id="bar"></i></div>
-  <div id="app"></div>
+  <div id="app"><p class="muted">Loading the study…</p></div>
 </div>
 <script>
 /* CONFIG, set before launch. sink: the Apps Script web-app URL (sink.gs) that stores a submission and answers
@@ -83,7 +83,14 @@ if (window.__STUDY_TEST__) { for (var __k in window.__STUDY_TEST__) CONFIG[__k] 
   function hashArm(s) { var h = 0; for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; return h % 2 ? 'after' : 'before'; }
   function store(k, v) { try { if (v === null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} }
   function read(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
-  var sid = pid + '-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2, 8);
+  // the submission id is random and independent of the Prolific ID: it is the only key on the blind Coding sheet
+  function newId() {
+    var b = new Uint8Array(16);
+    if (window.crypto && crypto.getRandomValues) crypto.getRandomValues(b); else for (var i = 0; i < 16; i++) b[i] = Math.floor(Math.random() * 256);
+    var hex = ''; for (var j = 0; j < 16; j++) hex += (b[j] < 16 ? '0' : '') + b[j].toString(16);
+    return 's-' + hex;
+  }
+  var sid = newId();
   var R = { id: sid, pid: pid, study: q.STUDY_ID || '', session: q.SESSION_ID || '', arm: null, armBy: null, device: null, screen: screen.width + 'x' + screen.height, viewport: window.innerWidth + 'x' + window.innerHeight, dpr: window.devicePixelRatio || 1, started: new Date().toISOString(), answers: {}, order: [] };
   R.device = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent) ? (/iPad|Tablet/i.test(navigator.userAgent) || (screen.width >= 700 && /Android/i.test(navigator.userAgent)) ? 'tablet' : 'phone') : 'computer';
   var IMG = null;
@@ -97,7 +104,7 @@ if (window.__STUDY_TEST__) { for (var __k in window.__STUDY_TEST__) CONFIG[__k] 
     if (kept === 'before' || kept === 'after') { R.arm = kept; R.armBy = 'kept'; return done(); }
     var fallback = function () { R.arm = pid ? hashArm(pid) : (Math.random() < 0.5 ? 'before' : 'after'); R.armBy = pid ? 'parity' : 'random'; if (pid) store('wmr_arm_' + pid, R.arm); done(); };
     if (!CONFIG.sink) return fallback();
-    var settled = false, timer = setTimeout(function () { if (!settled) { settled = true; fallback(); } }, 4000);
+    var settled = false, timer = setTimeout(function () { if (!settled) { settled = true; fallback(); } }, 8000);   // a sink that has been idle can take several seconds to wake
     fetch(CONFIG.sink + '?assign=1&pid=' + encodeURIComponent(pid), { method: 'GET' }).then(function (r) { return r.text(); }).then(function (t) {
       if (settled) return; settled = true; clearTimeout(timer);
       var m = /"arm"\s*:\s*"(before|after)"/.exec(t);
@@ -109,7 +116,7 @@ if (window.__STUDY_TEST__) { for (var __k in window.__STUDY_TEST__) CONFIG[__k] 
   function stimulus(img, opts) {
     opts = opts || {};
     var box = document.createElement('div'); box.className = 'stim';
-    var im = document.createElement('img'); im.src = img.src; im.alt = 'A screenshot of the game'; im.draggable = false; box.appendChild(im);
+    var im = document.createElement('img'); im.width = img.w; im.height = img.h; im.src = img.src; im.alt = 'A screenshot of the game'; im.draggable = false; box.appendChild(im);   // width/height reserve the space before the image arrives
     var grid = document.createElement('div'); grid.className = 'grid' + (opts.pick ? ' pick' : '');
     var cells = {};
     for (var row = 0; row < 9; row++) for (var col = 0; col < 7; col++) {
@@ -301,7 +308,7 @@ if (window.__STUDY_TEST__) { for (var __k in window.__STUDY_TEST__) CONFIG[__k] 
   (function resendPending() { var p = read('wmr_pending'); if (!p || !CONFIG.sink) return; try { var payload = JSON.parse(p); submit(payload, function () { store('wmr_pending', null); }, function () {}); } catch (e) {} })();
 
   window.STUDY = { R: R, screens: screens, show: show, next: next, CONFIG: CONFIG };
-  assignArm(function () { IMG = CONFIG.arms[R.arm]; show(0); });
+  assignArm(function () { IMG = CONFIG.arms[R.arm]; ['A', 'A_held', 'B'].forEach(function (k) { var p = new Image(); p.src = IMG[k].src; }); show(0); });   // the arm's three pictures load while the intro is read
 })();
 </script>
 </body>
